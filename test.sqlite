@@ -1,0 +1,67 @@
+-- This project analyzes a subscription database to calculate the churn rate based on different advertizements(segment 87 vs 30) and different months
+
+-- identify the first 3 months from the database
+WITH months AS
+(SELECT
+'2017-01-01' as first_day,
+'2017-01-31' as last_day
+UNION
+SELECT
+'2017-02-01' as first_day,
+'2017-02-28' as last_day
+UNION
+SELECT
+'2017-03-01' as first_day,
+'2017-03-31' as last_day
+),
+-- cross over the months table and the subscriptions table
+cross_join AS
+(SELECT * FROM subscriptions
+ CROSS JOIN months
+),
+status AS
+(SELECT 
+id, 
+first_day as month,
+-- identify whether a user's staus is active or canceled
+CASE
+ WHEN (subscription_start < first_day) AND
+ (subscription_end > first_day OR subscription_end IS NULL) AND (segment = 87) THEN 1
+ ELSE 0
+END AS is_active_87,
+CASE
+ WHEN (subscription_start < first_day) AND
+ (subscription_end > first_day OR subscription_end IS NULL) AND (segment = 30) THEN 1
+ ELSE 0
+  END AS is_active_30,
+--identify if a user canceled their subscription during the month AND identify which segment(87 or 30) their subscription is from
+CASE
+ WHEN (subscription_end BETWEEN first_day AND last_day) AND (segment= 87) THEN 1
+  ELSE 0
+END AS is_canceled_87,
+CASE
+ WHEN (subscription_end BETWEEN first_day AND last_day) AND (segment= 30) THEN 1
+  ELSE 0
+END AS is_canceled_30
+  FROM cross_join
+ ),
+ --create a status_aggregate temporary table that is a SUM of the active and canceled subscriptions for each segment, for each month.
+ status_aggregate AS 
+ (SELECT 
+ -- add MONTH to create a label for each month in the status_aggregate table
+ MONTH,
+ SUM(is_active_87) AS sum_active_87,
+ SUM(is_active_30) AS sum_active_30,
+ SUM(is_canceled_87) AS sum_canceled_87,
+ SUM(is_canceled_87) AS sum_canceled_30
+ FROM status
+ --group these sums into their months (first_day)
+ GROUP BY month
+ ) 
+ -- Calculate the CHURN rate and label is (AS) the churn rate for each segment (87 or 30), then multiply it by 1.0 to turn the integer into an float
+ SELECT month,
+1.0 * sum_canceled_87/sum_active_87 AS chrun_rate_87,
+1.0 * sum_canceled_30/sum_active_30 AS chrun_rate_30
+FROM status_aggregate;
+-- from this calculation its clear that january (month:01), has the lowest churn rate. This indicates that there were low rates of canceled subscriptions in that month. A low churn rate is a good indication.
+-- also, churn_rate_30 had lower rate than chrun_rate_87
